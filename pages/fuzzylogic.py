@@ -273,8 +273,10 @@ def fuzzify_preferences(
 
 def calculate_scores(
     user_fuzzy: Dict[str, Dict[str, float]],
+    total_weight: float,
 ) -> List[Tuple[str, float]]:
     results = []
+
     for dish, features in raw_dishes.items():
         score = 0.0
         for feat in user_fuzzy:
@@ -285,7 +287,9 @@ def calculate_scores(
             }
             for cat in user_fuzzy[feat]:
                 score += user_fuzzy[feat][cat] * dish_fuzzy.get(cat, 0.0)
-        results.append((dish, score))
+        normalized_score = score / total_weight
+        results.append((dish, normalized_score))
+
     return sorted(results, key=lambda x: x[1], reverse=True)
 
 
@@ -317,6 +321,50 @@ def plot_membership_plotly(feature: str) -> go.Figure:
         margin=dict(l=20, r=20, t=50, b=20),
         legend=dict(orientation="h", x=0, y=1.1),
     )
+    return fig
+
+
+def plot_dish_scores_percent(ranking: List[Tuple[str, float]]) -> go.Figure:
+    """
+    Creates a horizontal bar chart of dish scores converted to percentages.
+    Input scores are assumed to be in [0, 1] range.
+    """
+    if not ranking:
+        return go.Figure()
+
+    # Convert scores to percentages
+    dish_names = [dish for dish, _ in ranking]
+    scores_percent = [score * 100 for _, score in ranking]
+
+    fig = go.Figure(
+        data=[
+            go.Bar(
+                x=scores_percent,
+                y=dish_names,
+                orientation="h",
+                text=[f"{p:.1f}%" for p in scores_percent],
+                textposition="auto",
+                marker=dict(
+                    color=scores_percent,
+                    colorscale="Blues",
+                    line=dict(color="rgba(0,0,0,0.6)", width=1),
+                ),
+            )
+        ]
+    )
+
+    fig.update_layout(
+        title="📊 Dish Scores as Percentage Match",
+        title_font_size=24,
+        xaxis_title="Score (%)",
+        yaxis=dict(autorange="reversed"),
+        xaxis=dict(range=[0, 100], tickfont=dict(size=14)),
+        yaxis_tickfont=dict(size=14),
+        template="plotly_white",
+        height=800,
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+
     return fig
 
 
@@ -352,32 +400,30 @@ if st.button(
     help="Click to match your preferences with the best dishes.",
 ):
     user_fuzzy = fuzzify_preferences(user_raw)
+    total_weight = sum(user_raw[feat]["weight"] for feat in user_raw) or 1.0
 
     tab_results, tab_debug = st.tabs(["🍽️ Recommended Dishes", "🧪 Fuzzy Details"])
 
     with tab_results:
-        ranking = calculate_scores(user_fuzzy)
+        ranking = calculate_scores(user_fuzzy, total_weight)
 
         st.subheader("🍽️ Your Top 3 Matches", divider=True)
 
         top3 = ranking[:3]
-        next7 = ranking[3:10]
-        rest = ranking[10:]
 
         if top3:
-            with st.container(border=True):
-                for i, (dish, score) in enumerate(top3, 1):
-                    st.markdown(f"**{i}. {dish}** — Score: `{score:.2f}`")
+            medals = ["🥇", "🥈", "🥉"]
+            cols = st.columns(3)
 
-        if next7:
-            with st.expander("🍴 More Recommendations"):
-                for i, (dish, score) in enumerate(next7, 4):
-                    st.markdown(f"{i}. {dish} — Score: `{score:.2f}`")
+            for i, (dish, score) in enumerate(top3):
+                with cols[i]:
+                    st.metric(
+                        label=f"{medals[i]} {dish}",
+                        value=f"{score * 100:.1f}%",
+                        help="Fuzzy match score",
+                    )
 
-        if rest:
-            with st.expander("📋 Show Remaining Dishes"):
-                for i, (dish, score) in enumerate(rest, 11):
-                    st.markdown(f"{i}. {dish} — Score: `{score:.2f}`")
+        st.plotly_chart(plot_dish_scores_percent(ranking), use_container_width=True)
 
     with tab_debug:
         st.json(user_fuzzy)
