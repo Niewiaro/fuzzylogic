@@ -402,6 +402,8 @@ if st.button(
     user_fuzzy = fuzzify_preferences(user_raw)
     total_weight = sum(user_raw[feat]["weight"] for feat in user_raw) or 1.0
 
+    st.toast("✅ Recommendations generated successfully!", icon="🎉")
+
     tab_results, tab_debug = st.tabs(["🍽️ Recommended Dishes", "🧪 Fuzzy Details"])
 
     with tab_results:
