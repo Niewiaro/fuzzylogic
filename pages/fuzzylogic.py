@@ -336,6 +336,8 @@ def plot_dish_scores_percent(ranking: List[Tuple[str, float]]) -> go.Figure:
     dish_names = [dish for dish, _ in ranking]
     scores_percent = [score * 100 for _, score in ranking]
 
+    bar_height = max(300, 40 * len(ranking))
+
     fig = go.Figure(
         data=[
             go.Bar(
@@ -359,10 +361,80 @@ def plot_dish_scores_percent(ranking: List[Tuple[str, float]]) -> go.Figure:
         xaxis_title="Score (%)",
         yaxis=dict(autorange="reversed"),
         xaxis=dict(range=[0, 100], tickfont=dict(size=14)),
-        yaxis_tickfont=dict(size=14),
+        yaxis_tickfont=dict(size=16),
         template="plotly_white",
-        height=800,
+        height=bar_height,
         margin=dict(l=40, r=40, t=60, b=40),
+    )
+
+    return fig
+
+
+def plot_top3_radar(
+    user_profile: Dict[str, float], top_dishes: List[Tuple[str, Dict[str, float]]]
+) -> go.Figure:
+    """
+    Compares user preferences with top 3 dishes on a radar chart (modern design).
+    By default shows user and first-ranked dish only.
+    """
+    categories = list(user_profile.keys())
+    categories.append(categories[0])  # Close radar
+
+    fig = go.Figure()
+    colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
+
+    # User preferences (always visible)
+    user_values = [user_profile[cat] for cat in user_profile]
+    user_values.append(user_values[0])
+    fig.add_trace(
+        go.Scatterpolar(
+            r=user_values,
+            theta=categories,
+            fill="toself",
+            name="You",
+            line=dict(color=colors[0], width=3, dash="dash"),
+            marker=dict(size=6),
+            opacity=0.8,
+            visible=True,
+        )
+    )
+
+    # Dishes: only first one visible by default
+    for i, (dish_name, dish_profile) in enumerate(top_dishes):
+        values = [dish_profile.get(cat, 0) for cat in user_profile]
+        values.append(values[0])
+        fig.add_trace(
+            go.Scatterpolar(
+                r=values,
+                theta=categories,
+                fill="toself",
+                name=dish_name,
+                line=dict(color=colors[i + 1], width=2),
+                marker=dict(size=5),
+                opacity=0.7,
+                visible=True if i == 0 else "legendonly",
+            )
+        )
+
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True, range=[0, 100], gridcolor="lightgrey", gridwidth=1
+            ),
+            angularaxis=dict(tickfont=dict(size=12)),
+            bgcolor="white",
+        ),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.2,
+            xanchor="center",
+            x=0.5,
+            font=dict(size=12),
+        ),
+        template="plotly_white",
+        height=600,
+        margin=dict(l=30, r=30, t=80, b=80),
     )
 
     return fig
@@ -404,7 +476,9 @@ if st.button(
 
     st.toast("✅ Recommendations generated successfully!", icon="🎉")
 
-    tab_results, tab_debug = st.tabs(["🍽️ Recommended Dishes", "🧪 Fuzzy Details"])
+    tab_results, tab_radar, tab_debug = st.tabs(
+        ["🍽️ Recommendations", "📊 Comparison Radar", "🧪 Details"]
+    )
 
     with tab_results:
         ranking = calculate_scores(user_fuzzy, total_weight)
@@ -426,6 +500,22 @@ if st.button(
                     )
 
         st.plotly_chart(plot_dish_scores_percent(ranking), use_container_width=True)
+
+    with tab_radar:
+        st.subheader("🔎 Compare Preferences with Top 3 Dishes")
+
+        # Create user profile (only raw values)
+        user_profile = {k: v["value"] for k, v in user_raw.items()}
+
+        # Get top3 dish names
+        top3_dishes = [name for name, _ in top3]
+
+        # Get top3 raw profiles
+        top3_profiles = [(dish, raw_dishes[dish]) for dish in top3_dishes]
+
+        st.plotly_chart(
+            plot_top3_radar(user_profile, top3_profiles), use_container_width=True
+        )
 
     with tab_debug:
         st.json(user_fuzzy)
